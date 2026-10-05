@@ -12,8 +12,9 @@ import re
 import shutil
 import sys
 
-REPO_DIR = os.path.dirname(os.path.abspath(__file__))
-SITE = "https://aaronchenac.github.io/video-reading-notes"
+REPO_DIR = os.environ.get("OUT_ROOT") or os.path.dirname(os.path.abspath(__file__))
+# 图片绝对地址的宿主：默认 GitHub Pages；给香港服务器构建时设 SITE=http://43.135.4.239:8080
+SITE = os.environ.get("SITE") or "https://aaronchenac.github.io/video-reading-notes"
 
 CSS = """:root{--paper:#fbfaf7;--ink:#1e2d38;--muted:#687779;--line:#dedfd8;--accent:#176e68;--wash:#edf3ef}
 *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:28px}
@@ -191,6 +192,19 @@ def page(title, subtitle, body_html, meta_bits, full):
             f"<p>{' · '.join(esc(b) for b in meta_bits)}</p></header>{body_html}</article></main></body></html>")
 
 
+def slim(html):
+    """Cubox 抓取版必须扁平化：它按 <section>/<figure>/<h3> 分块打分，只挑一段当中段正文，
+    会把其余章节整段丢掉（2601005 实测：江浙沪 6714 字只抓到 1862 字、ETF 砍掉一半）。
+    去掉 section 包裹、图改成普通段落、h3 降级为加粗段落，即可全文抓取。"""
+    html = re.sub(r'<figure><img ([^>]*)><figcaption>(.*?)</figcaption></figure>',
+                  r'<p><img \1></p>\n<p class="cap">\2</p>', html, flags=re.S)
+    html = re.sub(r'<figure><img ([^>]*)></figure>', r'<p><img \1></p>', html, flags=re.S)
+    html = html.replace("<section>", "").replace("</section>", "")
+    html = re.sub(r"<h3>(.*?)</h3>", r"<p><strong>\1</strong></p>", html, flags=re.S)
+    html = html.replace("<header>", "").replace("</header>", "")
+    return html
+
+
 def build(src_dir):
     mds = [f for f in os.listdir(src_dir) if f.endswith(".md")]
     if not mds:
@@ -233,7 +247,7 @@ def build(src_dir):
     if source:
         meta_bits.append(f"原视频 {source}")
     i_html = page(title, sub, convert(body, video_id, False), meta_bits, True)
-    c_html = page(title, sub, convert(body, video_id, True), meta_bits, False)
+    c_html = slim(page(title, sub, convert(body, video_id, True), meta_bits, False))
     open(os.path.join(out_dir, "index.html"), "w", encoding="utf-8").write(i_html)
     open(os.path.join(out_dir, "cubox.html"), "w", encoding="utf-8").write(c_html)
     n_img = len(re.findall(r"<img ", c_html))
